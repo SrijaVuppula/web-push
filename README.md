@@ -207,6 +207,36 @@ values on the returned object or error.
 - *headers*, the headers of the response from the push service;
 - *body*, the body of the response from the push service.
 
+### Handling errors
+
+`sendNotification()` rejects with a `WebPushError` when the push service returns
+a non-2xx response. The error carries the same `statusCode`, `headers`, and
+`body` as a successful response, so you can inspect `err.statusCode` to decide
+what to do next:
+
+- **404 or 410** — the subscription is gone (the browser unsubscribed, or the
+  endpoint expired). Remove it from your subscription store; retrying will
+  never succeed.
+- **400** — the request was malformed (e.g. an invalid subscription object or
+  VAPID details). This is a bug in the calling code, not a transient failure.
+- **413** — the payload was too large for the push service. Web Push payloads
+  are capped at 4096 bytes after encryption.
+- **429** — you're being rate-limited by the push service. Back off and retry
+  later; do not remove the subscription.
+- **5xx** — the push service itself had a problem. Safe to retry, and not a
+  reason to remove the subscription.
+
+```javascript
+webpush.sendNotification(pushSubscription, payload).catch((err) => {
+  if (err.statusCode === 404 || err.statusCode === 410) {
+    // The subscription is no longer valid — stop sending to it.
+    removeSubscriptionFromDatabase(pushSubscription);
+  } else {
+    console.error('Push notification failed', err.statusCode, err.body);
+  }
+});
+```
+
 <hr />
 
 ## generateVAPIDKeys()
